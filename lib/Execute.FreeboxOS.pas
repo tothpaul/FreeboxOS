@@ -423,9 +423,9 @@ begin
   if FSessionToken = '' then
   begin
     OpenSession();
+  end else begin
+    FHTTP.CustomHeaders['X-Fbx-App-Auth'] := FSessionToken;
   end;
-
-  FHTTP.CustomHeaders['X-Fbx-App-Auth'] := FSessionToken;
 end;
 
 procedure TFreeboxTask.OnError;
@@ -494,6 +494,13 @@ begin
   FResp := FHTTP.Get(FURL + URI);
   Response := FResp.ContentAsString(TEncoding.UTF8);
   Result := GetResponse(URI, Response);
+  if (Result = False) and (FErrNo = 'auth_required') then
+  begin
+    OpenSession();
+    FResp := FHTTP.Get(FURL + URI);
+    Response := FResp.ContentAsString(TEncoding.UTF8);
+    Result := GetResponse(URI, Response);
+  end;
 end;
 
 function TFreeboxTask.GetResponse(const URI: string; var Response: UTF8String): Boolean;
@@ -522,6 +529,15 @@ begin
     FErrNo := M.error_code;
     FDescr := M.msg + ' (' + M.error_code + ')';
     FDetails := FURL + URI;
+
+    // 403 Forbidden
+    if FErrNo = 'auth_required' then // Session expired ?
+    begin
+      var C: TChallengeResult;
+      JSON.fromJSON(C, M.result);
+      FChallenge := C.challenge;  // new Challenge
+    end;
+
     Result := False;
   end;
 end;
@@ -611,6 +627,8 @@ end;
 
 procedure TFreeboxTask.OpenSession;
 begin
+  FSessionToken := '';
+  FHTTP.CustHeaders.Delete('X-Fbx-App-Auth');
   if not TryOpenSession then
   begin
     if FErrNo = 'auth_required' then
@@ -629,6 +647,7 @@ begin
     Synchronize(OnError);
     Abort;
   end;
+  FHTTP.CustomHeaders['X-Fbx-App-Auth'] := FSessionToken;
 end;
 
 { TGetCallsTask }
